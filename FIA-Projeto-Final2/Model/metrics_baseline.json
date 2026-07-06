@@ -1,0 +1,23 @@
+{
+  "best_model": "gradient_boosting",
+  "results": {
+    "logistic_regression": {
+      "auc_roc": 0.7488925681154762,
+      "ks": 0.3720039427002495,
+      "recall_default": 0.6785498489425982,
+      "precision_default": 0.1618466564181399
+    },
+    "random_forest": {
+      "auc_roc": 0.7432831083992846,
+      "ks": 0.3658050265687682,
+      "recall_default": 0.6731117824773414,
+      "precision_default": 0.1599043062200957
+    },
+    "gradient_boosting": {
+      "auc_roc": 0.7657718821805346,
+      "ks": 0.39448451588157324,
+      "recall_default": 0.6886203423967775,
+      "precision_default": 0.16988819875776398
+    }
+  }
+}

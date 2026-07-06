@@ -1,0 +1,21 @@
+# Dependências do serviço de predição (app Streamlit + API).
+# scikit-learn/pandas FIXADOS nas versões do treino (o model.pkl é serializado com elas).
+# numpy: o treino usa 2.5.0, mas o `numba` (dep do shap) exige numpy<2.5 — por isso o serving
+# fixa o 2.4.6 (mais próximo de 2.5; pickle de arrays sklearn é compatível dentro do 2.x — testado
+# no container carregando o model.pkl). sklearn 1.9 aceita numpy>=1.24.1; pandas 3.0.3 >=1.26.
+streamlit==1.58.0
+scikit-learn==1.9.0
+pandas==3.0.3
+numpy==2.4.6
+# API REST (App/api.py) — serving do predict via HTTP
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
+# Explicabilidade da decisão (/explain e app) via SHAP. Requer numba/llvmlite (com wheel no
+# Linux só p/ Python <= 3.13 — por isso a imagem usa python:3.12-slim). numba 0.65.1 é compatível
+# com numpy 2.5. Se o shap faltar, predict.explain() cai p/ um fallback por occlusion (sem deps).
+shap==0.52.0
+numba==0.65.1
+# Data lake: lê artefatos (model.pkl/abt_artifacts.pkl) e dados do MinIO quando
+# STORAGE_BACKEND=minio; pyarrow p/ Parquet (Silver/Gold). Libs de infra/deploy.
+pyarrow==24.0.0
+boto3==1.43.36

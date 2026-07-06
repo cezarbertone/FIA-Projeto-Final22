@@ -1,0 +1,168 @@
+# docker-compose da solução — Home Credit Default Risk
+# Sobe os serviços:
+#   - minio:        data lake S3-compatível (Bronze CSV + Silver/Gold Parquet + artefatos)
+#   - bootstrap:    job one-shot — cria o bucket E sobe os artefatos de serving (model/abt_artifacts)
+#   - airflow:      orquestra ingestão + pipeline medalhão + treino (pipeline_orchestration.py)
+#   - app:          serviço de predição (Streamlit) consumindo o modelo treinado
+#   - api:          mesma predição exposta como API REST (FastAPI) para integração
+#
+# A raiz do projeto é montada como volume para que os serviços enxerguem
+# DataPipeline/, Model/, Dados/ e App/. Com STORAGE_BACKEND=minio, as camadas de
+# dados e os artefatos são lidos/gravados no data lake (ver storage.py); sem essa
+# env (rodando scripts fora do compose) o backend é o filesystem local.
+#
+# Uso (a partir da pasta MLOps/):
+#   docker compose up -d            # sobe MinIO + bucket + artefatos de serving; a Bronze é populada
+#                                   # pela DAG (task ingest_bronze) quando ela rodar
+#   - MinIO Console: http://localhost:9001  (usuário/senha: minioadmin/minioadmin)
+#   - Airflow UI:    http://localhost:8080  (usuário/senha: airflow/airflow)
+#   - App Streamlit: http://localhost:8501
+#   - API (Swagger): http://localhost:8000/docs
+# Pré-requisito: o drop de origem na landing zone Dados/Landing/ (a task ingest_bronze o promove
+# à Bronze). app/API escoram no boot pelos artefatos que o bootstrap sobe, antes mesmo da DAG.
+#
+# INGESTÃO MENSAL VERSIONADA (pipeline sustentável): a DAG roda @monthly. A task `ingest_bronze`
+# promove o drop para a Bronze na partição `dt=<mês>/`; as etapas seguintes leem a UNIÃO das
+# partições dt=*/ e gravam, além dos arquivos planos ("latest" que app/API consomem), um snapshot
+# `dt=<mês>/` de cada camada derivada — visível no console do MinIO: Bronze/Silver (as 3 tabelas)/
+# Gold/artefatos/modelo, todos com a pasta dt=. O MÊS vem da execution_date da DAG (trigger manual =
+# mês corrente; backfill escolhe a partição certa). O modo LOCAL (scripts fora do compose) segue PLANO.
+
+name: mlops-fia-projeto-final
+
+# Configuração comum do data lake MinIO, reaproveitada pelos serviços via YAML anchor.
+x-minio-env: &minio-env
+  STORAGE_BACKEND: minio
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin
+  MINIO_BUCKET: fia-projeto-final
+
+services:
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web
+    volumes:
+      - minio_data:/data
+    # Sem healthcheck baseado em curl: tags recentes da imagem minio/minio não trazem curl.
+    # A prontidão é aferida pelo bootstrap (imagem minio/mc) via `mc ready`, e os demais
+    # serviços dependem da CONCLUSÃO do bootstrap (MinIO pronto + bucket criado + artefatos no lake).
+
+  # Job one-shot (roda no `up`): espera o MinIO (mc ready), cria o bucket (idempotente) e faz o
+  # BOOTSTRAP dos artefatos de serving (model.pkl + abt_artifacts.pkl) no lake, para que app/API já
+  # escorem logo após o `up`, ANTES da primeira run da DAG. Depois encerra.
+  # A Bronze NÃO é semeada aqui: quem a popula é a task `ingest_bronze` da DAG (ingestão de verdade,
+  # na partição dt=<mês>). A DAG depois sobrescreve o model.pkl com o recém-treinado. As object keys
+  # ficam idênticas aos paths que predict/app usam (ex.: `Model/model.pkl`).
+  bootstrap:
+    image: minio/mc
+    container_name: bootstrap
+    depends_on:
+      - minio
+    volumes:
+      - ../Model/model.pkl:/artifacts/model.pkl:ro                    # modelo de produção (versionado)
+      - ../DataPipeline/abt_artifacts.pkl:/artifacts/abt_artifacts.pkl:ro  # artefatos da ABT (versionados)
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do
+          echo 'aguardando o MinIO...'; sleep 2
+        done
+        mc ready local
+        mc mb --ignore-existing local/fia-projeto-final
+        echo 'Bootstrap dos artefatos de serving (model.pkl, abt_artifacts.pkl) no lake...'
+        if mc cp /artifacts/model.pkl local/fia-projeto-final/Model/model.pkl &&
+           mc cp /artifacts/abt_artifacts.pkl local/fia-projeto-final/DataPipeline/abt_artifacts.pkl; then
+          echo 'Artefatos enviados: app/API ja escoram antes mesmo de rodar a DAG.'
+        else
+          echo 'AVISO: model.pkl/abt_artifacts.pkl ausentes; serao gerados quando a DAG rodar.'
+        fi
+        echo 'Bucket fia-projeto-final pronto (Bronze sera populada pela task ingest_bronze da DAG).'
+
+  airflow:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: airflow
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      # SequentialExecutor: único compatível com SQLite (LocalExecutor exige Postgres/MySQL).
+      # Suficiente p/ a demo (pipeline roda um task por camada, em sequência).
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - PROJECT_ROOT=/opt/project
+      # boto3/pyarrow: cliente do data lake (MinIO) + Parquet, usados por storage.py.
+      - _PIP_ADDITIONAL_REQUIREMENTS=pandas numpy scikit-learn boto3 pyarrow
+      # Data lake: pipeline lê/grava Bronze/Silver/Gold + artefatos no MinIO.
+      - STORAGE_BACKEND=minio
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=fia-projeto-final
+      # INGESTION_DATE NÃO é definido aqui: o mês da partição dt= vem da execution_date da DAG
+      # (template {{ ds }} -> _set_month no pipeline_orchestration). Run agendada @monthly usa o mês
+      # da janela; trigger manual usa o mês corrente. Assim a partição é determinística e backfillável.
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully   # MinIO pronto + bucket criado + artefatos no lake
+    volumes:
+      - ..:/opt/project                                  # raiz do projeto
+      - ../MLOps/pipeline_orchestration.py:/opt/airflow/dags/pipeline_orchestration.py
+    ports:
+      - "8080:8080"
+    command: bash -c "airflow db migrate &&
+      airflow users create --username airflow --password airflow
+      --firstname a --lastname a --role Admin --email a@a.com || true &&
+      airflow standalone"
+
+  app:
+    build:
+      context: ..                 # raiz do projeto (Dockerfile copia Model/, DataPipeline/, App/)
+      dockerfile: App/Dockerfile
+    container_name: streamlit-app
+    working_dir: /opt/project
+    environment:
+      # Lê o model.pkl/abt_artifacts.pkl do data lake (MinIO) quando STORAGE_BACKEND=minio.
+      <<: *minio-env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully   # MinIO pronto + bucket criado + artefatos no lake
+    volumes:
+      # Monta a raiz p/ o app ler o model.pkl/abt_artifacts.pkl de PRODUÇÃO (gerados pelo run
+      # oficial `train.py --full`). A DAG do Airflow roda só a demo (Model/demo/) e não os toca.
+      # (Para deploy standalone do app, sem este volume, valem os artefatos assados na imagem.)
+      - ..:/opt/project
+    ports:
+      - "8501:8501"
+    # CMD já definido no Dockerfile (streamlit run App/app.py). Sem pip em runtime.
+
+  api:
+    # Reusa a MESMA imagem do app (mesmo build/artefatos), só troca o comando de start.
+    build:
+      context: ..
+      dockerfile: App/Dockerfile
+    container_name: fastapi-api
+    working_dir: /opt/project
+    environment:
+      # Lê o model.pkl/abt_artifacts.pkl do data lake (MinIO) quando STORAGE_BACKEND=minio.
+      <<: *minio-env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully   # MinIO pronto + bucket criado + artefatos no lake
+    volumes:
+      - ..:/opt/project
+    ports:
+      - "8000:8000"
+    # Sobe a API FastAPI em vez do Streamlit (sobrescreve o CMD do Dockerfile).
+    command: ["uvicorn", "App.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Volumes nomeados (persistência fora do ciclo de vida dos containers).
+volumes:
+  minio_data:   # dados do data lake MinIO (Bronze/Silver/Gold + artefatos)

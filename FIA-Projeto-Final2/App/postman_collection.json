@@ -1,0 +1,238 @@
+{
+  "info": {
+    "name": "FIA - Projeto Final (Risco de Crédito)",
+    "description": "Colecao de testes da API de predicao (App/api.py) do projeto Home Credit Default Risk.\n\nUse a variavel de colecao `baseUrl` para alternar o destino:\n- Local (uvicorn):  http://localhost:8000\n- Docker (compose): http://localhost:8000\n\nSwagger: {{baseUrl}}/docs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Status do servico, caminho do modelo carregado e threshold default."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict - perfil baixo risco (APROVAR)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicant_id\": 100001,\n  \"gender\": \"F\",\n  \"age_years\": 44,\n  \"total_income\": 300000,\n  \"credit_amount\": 400000,\n  \"annuity_amount\": 20000,\n  \"goods_price\": 400000,\n  \"years_employed\": 10,\n  \"education\": \"Higher education\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict"
+          ]
+        },
+        "description": "Escora uma solicitacao de perfil de baixo risco (renda alta, credito moderado)."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict - perfil alto risco (NEGAR/REVISAR)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicant_id\": 100002,\n  \"gender\": \"M\",\n  \"age_years\": 23,\n  \"total_income\": 50000,\n  \"credit_amount\": 900000,\n  \"annuity_amount\": 45000,\n  \"goods_price\": 900000,\n  \"years_employed\": 0.5,\n  \"education\": \"Secondary / secondary special\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict"
+          ]
+        },
+        "description": "Escora uma solicitacao de perfil de alto risco (renda baixa, credito alto, pouco tempo de emprego)."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict - threshold customizado (query param)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicant_id\": 100003,\n  \"gender\": \"M\",\n  \"age_years\": 35,\n  \"total_income\": 180000,\n  \"credit_amount\": 600000,\n  \"annuity_amount\": 27000,\n  \"goods_price\": 540000,\n  \"years_employed\": 5,\n  \"education\": \"Higher education\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict?threshold=0.3",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict"
+          ],
+          "query": [
+            {
+              "key": "threshold",
+              "value": "0.3",
+              "description": "Probabilidade acima da qual a decisao vira NEGAR/REVISAR (0..1). Default 0.5."
+            }
+          ]
+        },
+        "description": "Mesmo perfil, mas com threshold mais conservador (0.3) - tende a NEGAR mais solicitacoes."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict - campos minimos (resto imputado)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"total_income\": 120000,\n  \"credit_amount\": 500000\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict"
+          ]
+        },
+        "description": "So renda e credito; as demais features sao imputadas com os valores aprendidos no treino. Sem SK_ID_CURR (a API retorna o indice como id)."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict Batch - lote",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "[\n  {\n    \"applicant_id\": 200001,\n    \"gender\": \"F\",\n    \"age_years\": 44,\n    \"total_income\": 300000,\n    \"credit_amount\": 400000,\n    \"annuity_amount\": 20000,\n    \"goods_price\": 400000,\n    \"years_employed\": 10,\n    \"education\": \"Higher education\"\n  },\n  {\n    \"applicant_id\": 200002,\n    \"gender\": \"M\",\n    \"age_years\": 23,\n    \"total_income\": 50000,\n    \"credit_amount\": 900000,\n    \"annuity_amount\": 45000,\n    \"goods_price\": 900000,\n    \"years_employed\": 0.5,\n    \"education\": \"Secondary / secondary special\"\n  }\n]"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict/batch",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict",
+            "batch"
+          ]
+        },
+        "description": "Escora um lote de solicitacoes em uma unica chamada. Aceita o query param `threshold` igual ao /predict."
+      },
+      "response": []
+    },
+    {
+      "name": "Predict - com scores externos (EXT_SOURCE)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicant_id\": 100005,\n  \"total_income\": 180000,\n  \"credit_amount\": 600000,\n  \"ext_source_1\": 0.15,\n  \"ext_source_2\": 0.15,\n  \"ext_source_3\": 0.15\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/predict",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "predict"
+          ]
+        },
+        "description": "Os scores de credito externo (ext_source_1/2/3, 0..1, maior=melhor) sao os preditores MAIS fortes do modelo. Aqui todos baixos (0.15) -> alto risco. Troque para ~0.85 e veja a decisao virar APROVAR."
+      },
+      "response": []
+    },
+    {
+      "name": "Explain - fatores da decisao (SHAP)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicant_id\": 100006,\n  \"gender\": \"M\",\n  \"age_years\": 35,\n  \"total_income\": 180000,\n  \"credit_amount\": 600000,\n  \"annuity_amount\": 27000,\n  \"goods_price\": 540000,\n  \"years_employed\": 5,\n  \"education\": \"Secondary / secondary special\",\n  \"ext_source_1\": 0.2,\n  \"ext_source_2\": 0.2,\n  \"ext_source_3\": 0.2\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/explain?top_n=8",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "explain"
+          ],
+          "query": [
+            {
+              "key": "top_n",
+              "value": "8",
+              "description": "Nº de fatores a retornar (1..20)"
+            }
+          ]
+        },
+        "description": "Escora E explica a decisao: retorna os principais fatores (SHAP) que puxaram o risco. contribuicao>0 aumenta o risco, <0 reduz."
+      },
+      "response": []
+    }
+  ]
+}

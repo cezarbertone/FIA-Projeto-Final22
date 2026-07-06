@@ -1,0 +1,21 @@
+# Dependências do pipeline de ML (treino + EDA + notebooks).
+# Versões FIXADAS nas do ambiente de treino (Python 3.14) para reprodutibilidade e
+# compatibilidade do model.pkl (serializado com estas versões de sklearn/numpy/pandas).
+# Obs.: streamlit/airflow NÃO entram aqui (ferramentas de deploy) — ver App/requirements.txt.
+pandas==3.0.3
+numpy==2.5.0
+scikit-learn==1.9.0
+matplotlib==3.11.0
+seaborn==0.13.2
+jupyter==1.1.1
+nbformat==5.10.4
+
+# Persistência: Parquet (Silver/Gold) + cliente do data lake MinIO (S3). Libs de
+# infra/deploy (não de ML), equivalentes a Airflow/Docker — fora da restrição dos exemplos.
+pyarrow==24.0.0
+boto3==1.43.36
+
+# shap é OPCIONAL (interpretabilidade no Model/evaluation.ipynb, carregado via try/except).
+# Não está instalado no venv de treino e pode não ter wheel p/ Python 3.14.
+# Para habilitar: pip install shap
+# shap

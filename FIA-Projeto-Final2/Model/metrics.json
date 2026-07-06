@@ -1,0 +1,24 @@
+{
+  "best_model": "gradient_boosting",
+  "results": {
+    "logistic_regression": {
+      "cv_auc": 0.7540989698134506
+    },
+    "random_forest": {
+      "cv_auc": 0.7448084730277245
+    },
+    "gradient_boosting": {
+      "auc_roc": 0.7726901319958163,
+      "ks": 0.4068876275924467,
+      "recall_default": 0.6916414904330312,
+      "precision_default": 0.17412910095836925,
+      "accuracy": 0.7102905549322798,
+      "cv_auc": 0.7628429045475771,
+      "best_params": {
+        "learning_rate": 0.1,
+        "max_depth": 3,
+        "n_estimators": 200
+      }
+    }
+  }
+}
